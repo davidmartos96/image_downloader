@@ -35,7 +35,7 @@ public class SwiftImageDownloaderPlugin: NSObject, FlutterPlugin {
 
             PHPhotoLibrary.requestAuthorization { status in
                 switch status {
-                case .authorized:
+                case .authorized, .limited:
                     self.downloadImage(url, headers, result)
                 case .denied, .restricted:
                     result(nil)
