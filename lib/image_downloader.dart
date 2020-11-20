@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Provide the function to save the image on the Internet to each devices.
@@ -24,8 +23,8 @@ class ImageDownloader {
   /// imageId is in case of Adroid,  MediaStore.Images.Media._ID, in case of ios, PHObjectPlaceholder#localIdentifier.
   static Future<String> downloadImage(
     String url, {
-    Map<String, String> headers,
-    AndroidDestinationType destination,
+    Map<String, String>? headers,
+    AndroidDestinationType? destination,
   }) async {
     return await _channel.invokeMethod('downloadImage', <String, dynamic>{
       'url': url,
@@ -38,11 +37,11 @@ class ImageDownloader {
 
   /// You can get the progress with [onProgressUpdate].
   /// On iOS, cannot get imageId.
-  static void callback({Function(String, int)/*!*/ onProgressUpdate}) {
+  static void callback({required Function(String?, int?) onProgressUpdate}) {
     _channel.setMethodCallHandler((MethodCall call) {
       if (call.method == 'onProgressUpdate') {
-        String id = call.arguments['image_id'] as String;
-        int progress = call.arguments['progress'] as int;
+        String? id = call.arguments['image_id'] as String?;
+        int? progress = call.arguments['progress'] as int?;
         onProgressUpdate(id, progress);
       }
       return Future.value(null);
@@ -82,7 +81,7 @@ class ImageDownloader {
 /// Save destination on android.
 class AndroidDestinationType {
   final String _directory;
-  String _subDirectory;
+  String? _subDirectory;
   bool _inPublicDir = true;
 
   /// Save to specified [directory].
@@ -94,8 +93,8 @@ class AndroidDestinationType {
   /// [subDirectory] can contain a file name.
   factory AndroidDestinationType.custom({
     bool inPublicDir = true,
-    @required String directory,
-    String subDirectory,
+    required String directory,
+    String? subDirectory,
   }) {
     return AndroidDestinationType._internal(directory)
       .._setInPublicDir(inPublicDir)
@@ -110,7 +109,7 @@ class AndroidDestinationType {
   }
 
   /// Specify sud directory that inclueds file name.
-  void subDirectory(String subDirectory) {
+  void subDirectory(String? subDirectory) {
     this._subDirectory = subDirectory;
   }
 
