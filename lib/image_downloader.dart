@@ -38,7 +38,7 @@ class ImageDownloader {
 
   /// You can get the progress with [onProgressUpdate].
   /// On iOS, cannot get imageId.
-  static void callback({Function(String, int) onProgressUpdate}) {
+  static void callback({Function(String, int)/*!*/ onProgressUpdate}) {
     _channel.setMethodCallHandler((MethodCall call) {
       if (call.method == 'onProgressUpdate') {
         String id = call.arguments['image_id'] as String;
@@ -93,7 +93,7 @@ class AndroidDestinationType {
   /// For example, ```/storage/emulated/0/Android/data/<applicationId>/files``` .
   /// [subDirectory] can contain a file name.
   factory AndroidDestinationType.custom({
-    bool inPublicDir,
+    bool inPublicDir = true,
     @required String directory,
     String subDirectory,
   }) {
