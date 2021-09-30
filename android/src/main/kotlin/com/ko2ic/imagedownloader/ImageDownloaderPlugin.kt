@@ -8,44 +8,65 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.FlutterPlugin.FlutterPluginBinding
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import java.text.SimpleDateFormat
 import java.util.*
 
 
-class ImageDownloaderPlugin(
-        private val registrar: Registrar,
-        private val channel: MethodChannel,
-        private val permissionListener: ImageDownloaderPermissionListener
-) : MethodCallHandler {
+class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     companion object {
-        @JvmStatic
-        fun registerWith(registrar: Registrar) {
-            val channel = MethodChannel(registrar.messenger(), "plugins.ko2ic.com/image_downloader")
-            val activity = registrar.activity() ?: return
-
-            val listener = ImageDownloaderPermissionListener(activity)
-            registrar.addRequestPermissionsResultListener(listener)
-            channel.setMethodCallHandler(ImageDownloaderPlugin(registrar, channel, listener))
-        }
-
         private const val LOGGER_TAG = "image_downloader"
     }
+
+    private lateinit var channel: MethodChannel
+    private lateinit var activityBinding: ActivityPluginBinding
+    private lateinit var permissionListener: ImageDownloaderPermissionListener
 
     private var inPublicDir: Boolean = true
 
     private var callback: CallbackImpl? = null
+
+    override fun onAttachedToEngine(binding: FlutterPluginBinding) {
+        channel = MethodChannel(binding.binaryMessenger, "plugins.ko2ic.com/image_downloader")
+        channel.setMethodCallHandler(this)
+    }
+
+    override fun onDetachedFromEngine(binding: FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityBinding = binding
+
+        permissionListener = ImageDownloaderPermissionListener( activityBinding.activity)
+        activityBinding.addRequestPermissionsResultListener(permissionListener)
+    }
+
+    override fun onDetachedFromActivity() {
+        activityBinding.removeRequestPermissionsResultListener(permissionListener)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    }
+
+
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "downloadImage" -> {
                 inPublicDir = call.argument<Boolean>("inPublicDir") ?: true
 
-                val permissionCallback = CallbackImpl(call, result, channel, registrar.context())
+                val permissionCallback = CallbackImpl(call, result, channel, activityBinding.activity)
                 this.callback = permissionCallback
                 if (inPublicDir) {
                     this.permissionListener.callback = permissionCallback
@@ -147,4 +168,6 @@ class ImageDownloaderPlugin(
             }
         }
     }
+
+
 }
