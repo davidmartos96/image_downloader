@@ -33,16 +33,27 @@ public class SwiftImageDownloaderPlugin: NSObject, FlutterPlugin {
 
             let headers = dict["headers"] as? [String: String]
 
-            PHPhotoLibrary.requestAuthorization { status in
-                switch status {
-                case .authorized, .limited:
-                    self.downloadImage(url, headers, result)
-                case .denied, .restricted:
-                    result(nil)
-                case .notDetermined:
-                    result(nil)
-                }
-            }
+         if #available(iOS 14, *) {
+				PHPhotoLibrary.requestAuthorization(for: .addOnly)  { status in
+					switch status {
+					case .authorized, .limited:
+						self.downloadImage(url, headers, result)
+					case .denied, .restricted, .notDetermined:
+						result(nil)
+					   }
+					}
+				}
+			 else {
+				// Fallback on earlier versions
+				PHPhotoLibrary.requestAuthorization { status in
+					switch status {
+					case .authorized, .limited:
+						self.downloadImage(url, headers, result)
+					case .denied, .restricted, .notDetermined:
+						result(nil)
+					}
+				}
+			}
         case "cancel":
             dataTask?.cancel()
         case "open":
