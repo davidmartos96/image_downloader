@@ -17,7 +17,7 @@ class _MyAppState extends State<MyApp> {
   String _path = "";
   String _size = "";
   String _mimeType = "";
-  File _imageFile;
+  File? _imageFile;
   int _progress = 0;
 
   List<File> _mulitpleFiles = [];
@@ -26,9 +26,9 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    ImageDownloader.callback(onProgressUpdate: (String imageId, int progress) {
+    ImageDownloader.callback(onProgressUpdate: (String? imageId, int? progress) {
       setState(() {
-        _progress = progress;
+        _progress = progress ?? 0;
       });
     });
   }
@@ -53,54 +53,57 @@ class _MyAppState extends State<MyApp> {
                 _path == ""
                     ? Container()
                     : Builder(
-                        builder: (context) => RaisedButton(
+                        builder: (context) => ElevatedButton(
                           onPressed: () async {
                             await ImageDownloader.open(_path).catchError((error) {
-                              Scaffold.of(context).showSnackBar(SnackBar(
-                                content: Text((error as PlatformException).message),
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text((error as PlatformException).message ?? ''),
                               ));
                             });
                           },
                           child: Text("Open"),
                         ),
                       ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
                     ImageDownloader.cancel();
                   },
                   child: Text("Cancel"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
                     _downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/bigsize.jpg");
                   },
                   child: Text("default destination"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
                     _downloadImage(
                       "https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/flutter.png",
                       destination: AndroidDestinationType.directoryPictures
-                        ..inExternalFilesDir()
-                        ..subDirectory("sample.gif"),
+                        //..inExternalFilesDir()
+                        ..subDirectory("samples/sample.gif"),
                     );
                   },
                   child: Text("custom destination(only android)"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
-                    _downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/flutter_no.png", whenError: true);
+                    _downloadImage(
+                        "https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/flutter_no.png",
+                        whenError: true);
                   },
                   child: Text("404 error"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
-                    _downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.mkv", whenError: true);
+                    _downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.mkv",
+                        whenError: true);
                     //_downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.3gp");
                   },
                   child: Text("unsupported file error(only ios)"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () {
                     //_downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.mp4");
                     //_downloadImage("https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.m4v");
@@ -108,7 +111,7 @@ class _MyAppState extends State<MyApp> {
                   },
                   child: Text("movie"),
                 ),
-                RaisedButton(
+                ElevatedButton(
                   onPressed: () async {
                     var list = [
                       "https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/bigsize.jpg",
@@ -132,9 +135,9 @@ class _MyAppState extends State<MyApp> {
 
                     for (var url in list) {
                       try {
-                        var imageId = await ImageDownloader.downloadImage(url);
-                        var path = await ImageDownloader.findPath(imageId);
-                        files.add(File(path));
+                        await ImageDownloader.downloadImage(url);
+                        // final path = await ImageDownloader.findPath(imageId!);
+                        // files.add(File(path));
                       } catch (error) {
                         print(error);
                       }
@@ -145,7 +148,14 @@ class _MyAppState extends State<MyApp> {
                   },
                   child: Text("multiple downlod"),
                 ),
-                (_imageFile == null) ? Container() : Image.file(_imageFile),
+                ElevatedButton(
+                  onPressed: () => _downloadImage(
+                    "https://raw.githubusercontent.com/wiki/ko2ic/image_downloader/images/sample.webp",
+                    outputMimeType: "image/png",
+                  ),
+                  child: Text("download webp(only Android)"),
+                ),
+                (_imageFile == null) ? Container() : Image.file(_imageFile!),
                 GridView.count(
                   crossAxisCount: 4,
                   shrinkWrap: true,
@@ -166,18 +176,26 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  Future<void> _downloadImage(String url, {AndroidDestinationType destination, bool whenError = false}) async {
-    String fileName;
-    String path;
-    int size;
-    String mimeType;
+  Future<void> _downloadImage(
+    String url, {
+    AndroidDestinationType? destination,
+    bool whenError = false,
+    String? outputMimeType,
+  }) async {
+    String? fileName;
+    String? path;
+    int? size;
+    String? mimeType;
     try {
-      String imageId;
+      String? imageId;
 
       if (whenError) {
-        imageId = await ImageDownloader.downloadImage(url).catchError((error) {
+        await ImageDownloader.downloadImage(
+          url
+         // outputMimeType: outputMimeType,
+        ).catchError((error) {
           if (error is PlatformException) {
-            var path = "";
+            String? path = "";
             if (error.code == "404") {
               print("Not Found Error.");
             } else if (error.code == "unsupported_file") {
@@ -186,24 +204,32 @@ class _MyAppState extends State<MyApp> {
             }
             setState(() {
               _message = error.toString();
-              _path = path;
+              _path = path ?? '';
             });
           }
 
           print(error);
         }).timeout(Duration(seconds: 10), onTimeout: () {
           print("timeout");
+          return;
         });
       } else {
         if (destination == null) {
-          imageId = await ImageDownloader.downloadImage(url);
+          await ImageDownloader.downloadImage(
+            url,
+           // outputMimeType: outputMimeType,
+          );
         } else {
-          imageId = await ImageDownloader.downloadImage(
+          await ImageDownloader.downloadImage(
             url,
             destination: destination,
+            //outputMimeType: outputMimeType,
           );
         }
       }
+
+      print("FINISHED!");
+      return;
 
       if (imageId == null) {
         return;
@@ -214,7 +240,7 @@ class _MyAppState extends State<MyApp> {
       mimeType = await ImageDownloader.findMimeType(imageId);
     } on PlatformException catch (error) {
       setState(() {
-        _message = error.message;
+        _message = error.message ?? '';
       });
       return;
     }
@@ -226,11 +252,12 @@ class _MyAppState extends State<MyApp> {
       _message = 'Saved as "$fileName" in $location.\n';
       _size = 'size:     $size';
       _mimeType = 'mimeType: $mimeType';
-      _path = path;
+      _path = path ?? '';
 
       if (!_mimeType.contains("video")) {
-        _imageFile = File(path);
+        _imageFile = File(path!);
       }
+      return;
     });
   }
 }
