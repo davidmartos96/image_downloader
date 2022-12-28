@@ -66,16 +66,17 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "downloadImage" -> {
                 inPublicDir = call.argument<Boolean>("inPublicDir") ?: true
 
+                if (!inPublicDir) {
+                    result.notImplemented()
+                    return
+                }
+
                 val permissionCallback = CallbackImpl(call, result, channel, activityBinding.activity)
                 this.callback = permissionCallback
-                if (inPublicDir) {
-                    this.permissionListener.callback = permissionCallback
-                    if (permissionListener.alreadyGranted()) {
-                        permissionCallback.granted()
-                    }
-                } else {
-                    permissionCallback.granted()
-                }
+
+                // Since only public dirs are implemented, this should act as granted
+                permissionCallback.granted()
+
             }
             else -> result.notImplemented()
         }
@@ -118,7 +119,7 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
 
             if (Build.VERSION.SDK_INT >= 29) {
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "$directory/$tempSubDirectory")
+                request.setDestinationInExternalPublicDir(directory, tempSubDirectory)
             } else {
                 request.allowScanningByMediaScanner()
                 request.setDestinationInExternalPublicDir(directory, tempSubDirectory)
