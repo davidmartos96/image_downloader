@@ -45,7 +45,7 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activityBinding = binding
 
-        permissionListener = ImageDownloaderPermissionListener( activityBinding.activity)
+        permissionListener = ImageDownloaderPermissionListener(activityBinding.activity)
         activityBinding.addRequestPermissionsResultListener(permissionListener)
     }
 
@@ -60,11 +60,12 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
 
-
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "downloadImage" -> {
                 inPublicDir = call.argument<Boolean>("inPublicDir") ?: true
+
+                //println("PLUGIN ENTRYPOINT")
 
                 if (!inPublicDir) {
                     result.notImplemented()
@@ -74,8 +75,19 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val permissionCallback = CallbackImpl(call, result, channel, activityBinding.activity)
                 this.callback = permissionCallback
 
-                // Since only public dirs are implemented, this should act as granted
-                permissionCallback.granted()
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    this.permissionListener.callback = permissionCallback
+                    if (permissionListener.alreadyGranted()) {
+                        permissionCallback.granted()
+                    } else {
+                        // The request permission will be triggered, which will be resolved in a callback
+                    }
+                } else {
+                    // Since only public dirs are implemented, and above Q does not need any permissions
+                    // this should act as granted
+                    permissionCallback.granted()
+                }
+
 
             }
             else -> result.notImplemented()
@@ -93,6 +105,7 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         var downloader: Downloader? = null
 
         override fun granted() {
+            //println("GRANTEDDDD!!!")
             val url = call.argument<String>("url")
                     ?: throw IllegalArgumentException("url is required.")
 
@@ -118,7 +131,9 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 }
             }
 
-            if (Build.VERSION.SDK_INT >= 29) {
+            // println("SAVE ${directory}  ${tempSubDirectory}")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 request.setDestinationInExternalPublicDir(directory, tempSubDirectory)
             } else {
                 request.allowScanningByMediaScanner()
@@ -129,34 +144,38 @@ class ImageDownloaderPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val downloader = Downloader(context, request)
             this.downloader = downloader
 
-            downloader.execute(onNext = {
-                Log.d(LOGGER_TAG, it.result.toString())
-                when (it) {
-                    is Downloader.DownloadStatus.Failed -> Log.d(LOGGER_TAG, it.reason)
-                    is Downloader.DownloadStatus.Paused -> Log.d(LOGGER_TAG, it.reason)
-                    is Downloader.DownloadStatus.Running -> {
-                        Log.d(LOGGER_TAG, it.progress.toString())
-                        val args = HashMap<String, Any>()
-                        args["image_id"] = it.result.id.toString()
-                        args["progress"] = it.progress
+            downloader.execute(
+                    onNext = {
+                        Log.d(LOGGER_TAG, it.result.toString())
+                        when (it) {
+                            is Downloader.DownloadStatus.Failed -> Log.d(LOGGER_TAG, it.reason)
+                            is Downloader.DownloadStatus.Paused -> Log.d(LOGGER_TAG, it.reason)
+                            is Downloader.DownloadStatus.Running -> {
+                                Log.d(LOGGER_TAG, it.progress.toString())
+                                val args = HashMap<String, Any>()
+                                args["image_id"] = it.result.id.toString()
+                                args["progress"] = it.progress
 
-                        val uiThreadHandler = Handler(Looper.getMainLooper())
+                                val uiThreadHandler = Handler(Looper.getMainLooper())
 
-                        uiThreadHandler.post {
-                            channel.invokeMethod("onProgressUpdate", args)
+                                uiThreadHandler.post {
+                                    channel.invokeMethod("onProgressUpdate", args)
+                                }
+                            }
                         }
-                    }
-                }
 
-            }, onError = {
-                result.error(it.code, it.message, null)
-            }, onComplete = {
-                result.success(null)
-            })
+                    },
+                    onError = {
+                        result.error(it.code, it.message, null)
+                    },
+                    onComplete = {
+                        result.success(null)
+                    },
+            )
         }
 
         override fun denied() {
-            result.success(null)
+            result.error("no_permission", "Write permission denied", null)
         }
 
         private fun convertToDirectory(directoryType: String): String {
