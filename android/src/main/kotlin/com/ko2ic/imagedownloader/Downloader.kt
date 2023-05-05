@@ -57,11 +57,11 @@ class Downloader(private val context: Context, private val request: Request) {
                     }
 
                     val downloadedBytes = cursor.getInt(
-                        cursor.getColumnIndex(COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        cursor.getColumnIndexOrThrow(COLUMN_BYTES_DOWNLOADED_SO_FAR)
                     )
-                    val totalBytes = cursor.getInt(cursor.getColumnIndex(COLUMN_TOTAL_SIZE_BYTES))
+                    val totalBytes = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_TOTAL_SIZE_BYTES))
 
-                    when (cursor.getInt(cursor.getColumnIndex(COLUMN_STATUS))) {
+                    when (cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_STATUS))) {
                         STATUS_SUCCESSFUL -> downloading = false
                         STATUS_FAILED -> downloading = false
                     }
@@ -107,8 +107,8 @@ class Downloader(private val context: Context, private val request: Request) {
         }
         val cursor = manager.query(query)
         if (cursor.moveToFirst()) {
-            val status = cursor.getInt(cursor.getColumnIndex(COLUMN_STATUS))
-            val reason = cursor.getInt(cursor.getColumnIndex(COLUMN_REASON))
+            val status = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_STATUS))
+            val reason = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_REASON))
             val requestResult: RequestResult = createRequestResult(id, cursor)
             when (status) {
                 STATUS_FAILED -> {
@@ -181,12 +181,12 @@ class Downloader(private val context: Context, private val request: Request) {
     private fun createRequestResult(id: Long, cursor: Cursor): RequestResult =
         RequestResult(
             id = id,
-            remoteUri = cursor.getString(cursor.getColumnIndex(COLUMN_URI)),
-            localUri = cursor.getString(cursor.getColumnIndex(COLUMN_LOCAL_URI)),
-            mediaType = cursor.getString(cursor.getColumnIndex(COLUMN_MEDIA_TYPE)),
-            totalSize = cursor.getInt(cursor.getColumnIndex(COLUMN_TOTAL_SIZE_BYTES)),
-            title = cursor.getString(cursor.getColumnIndex(COLUMN_TITLE)),
-            description = cursor.getString(cursor.getColumnIndex(COLUMN_DESCRIPTION))
+            remoteUri = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_URI)),
+            localUri = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_LOCAL_URI)),
+            mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_MEDIA_TYPE)),
+            totalSize = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_TOTAL_SIZE_BYTES)),
+            title = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE)),
+            description = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_DESCRIPTION))
         )
 
     sealed class DownloadStatus(val result: RequestResult) {
