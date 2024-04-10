@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.database.Cursor
+import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -34,7 +36,7 @@ class Downloader(private val context: Context, private val request: Request) {
                 }
             }
         }
-        context.registerReceiver(receiver, IntentFilter(ACTION_DOWNLOAD_COMPLETE))
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(ACTION_DOWNLOAD_COMPLETE), RECEIVER_NOT_EXPORTED)
         downloadId = manager.enqueue(request)
 
         val downloadId = this.downloadId
