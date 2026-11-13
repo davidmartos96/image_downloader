@@ -7,10 +7,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.database.Cursor
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
-import androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+import androidx.core.content.ContextCompat.RECEIVER_EXPORTED
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class Downloader(private val context: Context, private val request: Request) {
@@ -18,9 +21,15 @@ class Downloader(private val context: Context, private val request: Request) {
     private val manager: DownloadManager =
         context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     private var receiver: BroadcastReceiver? = null
 
     private var downloadId: Long? = null
+
+    // Guards the terminal callbacks: both the broadcast and the polling thread can
+    // observe the end of the download, but the Flutter result may only be answered once.
+    private val finished = AtomicBoolean(false)
 
     fun execute(
         onNext: (DownloadStatus) -> Unit,
@@ -32,46 +41,40 @@ class Downloader(private val context: Context, private val request: Request) {
                 intent ?: return
                 if (ACTION_DOWNLOAD_COMPLETE == intent.action) {
                     val id = intent.getLongExtra(EXTRA_DOWNLOAD_ID, -1)
+                    // Ignore completions of other downloads.
+                    if (id != downloadId) return
                     resolveDownloadStatus(id, onNext, onError, onComplete)
                 }
             }
         }
-        ContextCompat.registerReceiver(context, receiver, IntentFilter(ACTION_DOWNLOAD_COMPLETE), RECEIVER_NOT_EXPORTED)
-        downloadId = manager.enqueue(request)
+        // ACTION_DOWNLOAD_COMPLETE is sent by the DownloadManager provider, which is not
+        // part of this app, so a RECEIVER_NOT_EXPORTED receiver may never get it.
+        // The polling thread below is the source of truth; the receiver is only a shortcut.
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(ACTION_DOWNLOAD_COMPLETE), RECEIVER_EXPORTED)
+        val downloadId = manager.enqueue(request)
+        this.downloadId = downloadId
 
-        val downloadId = this.downloadId
+        Thread(Runnable {
+            while (!finished.get()) {
+                val q = Query()
+                q.setFilterById(downloadId)
 
-        if (downloadId != null) {
-            Thread(Runnable {
-                var downloading = true
-
-                while (downloading) {
-
-                    val q = Query()
-                    q.setFilterById(downloadId)
-
-                    val cursor = manager.query(q)
-                    cursor.moveToFirst()
-
-                    if (cursor.count == 0) {
-                        cursor.close()
-                        break
+                val cursor = manager.query(q)
+                if (cursor == null || !cursor.moveToFirst()) {
+                    // The download was removed (e.g. cancelled from the notification).
+                    cursor?.close()
+                    mainHandler.post {
+                        finishWithError(onError, DownloadFailedException("DOWNLOAD_REMOVED", "The download was removed."))
                     }
+                    break
+                }
 
-                    val downloadedBytes = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                    )
-                    val totalBytes = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_TOTAL_SIZE_BYTES))
+                val status = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_STATUS))
+                val downloadedBytes = cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                // -1 until the server reports the size.
+                val totalBytes = cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_TOTAL_SIZE_BYTES))
 
-                    when (cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_STATUS))) {
-                        STATUS_SUCCESSFUL -> downloading = false
-                        STATUS_FAILED -> downloading = false
-                    }
-
-                    if (totalBytes == 0) {
-                        break
-                    }
-
+                if (totalBytes > 0) {
                     val progress = BigDecimal(downloadedBytes).divide(
                         BigDecimal(totalBytes), 2, RoundingMode.DOWN
                     ).multiply(
@@ -79,23 +82,40 @@ class Downloader(private val context: Context, private val request: Request) {
                     ).setScale(0, RoundingMode.DOWN)
 
                     onNext(DownloadStatus.Running(createRequestResult(downloadId, cursor), progress.toInt()))
-
-                    cursor.close()
-                    Thread.sleep(200)
                 }
-            }).start()
-        }
+
+                cursor.close()
+
+                if (status == STATUS_SUCCESSFUL || status == STATUS_FAILED) {
+                    mainHandler.post { resolveDownloadStatus(downloadId, onNext, onError, onComplete) }
+                    break
+                }
+
+                Thread.sleep(200)
+            }
+        }).start()
     }
 
     fun cancel() {
-        if (downloadId != null) {
-            manager.remove(downloadId!!)
-        }
+        downloadId?.let { manager.remove(it) }
+        unregisterReceiver()
+    }
 
+    private fun unregisterReceiver() {
         receiver?.let {
-            context.unregisterReceiver(it)
+            try {
+                context.unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+                // Already unregistered.
+            }
             receiver = null
         }
+    }
+
+    private fun finishWithError(onError: (DownloadFailedException) -> Unit, error: DownloadFailedException) {
+        if (!finished.compareAndSet(false, true)) return
+        unregisterReceiver()
+        onError(error)
     }
 
     private fun resolveDownloadStatus(
@@ -151,9 +171,11 @@ class Downloader(private val context: Context, private val request: Request) {
                         in 400..599 -> Pair(reason.toString(), "HTTP status code error.")
                         else -> Pair(reason.toString(), "Unknown.")
                     }
-                    onNext(DownloadStatus.Failed(requestResult, failedReason.first))
-                    cancel()
-                    onError(DownloadFailedException(failedReason.first, failedReason.second))
+                    if (finished.compareAndSet(false, true)) {
+                        onNext(DownloadStatus.Failed(requestResult, failedReason.first))
+                        cancel()
+                        onError(DownloadFailedException(failedReason.first, failedReason.second))
+                    }
                 }
                 STATUS_PAUSED -> {
                     val pausedReason = when (reason) {
@@ -169,10 +191,10 @@ class Downloader(private val context: Context, private val request: Request) {
                     onNext(DownloadStatus.Pending(requestResult))
                 }
                 STATUS_SUCCESSFUL -> {
-                    onNext(DownloadStatus.Successful(requestResult))
-                    onComplete()
-                    receiver?.let {
-                        context.unregisterReceiver(it)
+                    if (finished.compareAndSet(false, true)) {
+                        onNext(DownloadStatus.Successful(requestResult))
+                        unregisterReceiver()
+                        onComplete()
                     }
                 }
             }
